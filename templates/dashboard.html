@@ -11,8 +11,12 @@
   {{template "nav" .}}
 
   <main class="page">
+    <h1 class="page-title">Grass</h1>
+    <p class="page-subtitle">continue the streak, gently.</p>
+
     {{if not .RateGoals}}
     <section class="empty-state">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c0-5 3-8 8-9-1 6-3 9-8 9Z"/><path d="M12 21c0-6-3.5-10-9-11 1 7 4 11 9 11Z"/><path d="M12 21v-6"/></svg>
       <p>Grass に表示できる目標がまだありません。</p>
       <p class="muted">まず <a href="/goals">Goals</a> で「1日あたりの目標時間」を持つ Goal を作成してください（例: Mathematics — 60 min/day）。</p>
     </section>
@@ -28,6 +32,10 @@
         <label for="year-select" class="muted small-label">Year</label>
         <select id="year-select"></select>
       </div>
+      <span id="streak-badge" class="streak-badge" hidden>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c0-5 3-8 8-9-1 6-3 9-8 9Z"/><path d="M12 21c0-6-3.5-10-9-11 1 7 4 11 9 11Z"/></svg>
+        <span id="streak-badge-text"></span>
+      </span>
     </section>
 
     <section id="grass-container" class="grass-container" aria-live="polite">

@@ -406,6 +406,38 @@ private two-person tool, but is explicitly **not** what should be used if
 this app is ever exposed to the public internet with untrusted signups —
 see Future Extensions.
 
+## 18b. Password Recovery (no email)
+
+Added after the initial MVP, at the user's request. StudyLog has no SMTP
+integration (adding one would pull in real external-service configuration
+for a two-person private tool — against the "minimal dependencies"
+priority), so "forgot password" is solved with a **recovery code**
+instead of an email link:
+
+- At account creation (`/setup`) and again after every successful reset,
+  the server generates a random 12-character code (grouped as
+  `XXXX-XXXX-XXXX`, from an alphabet that excludes visually-ambiguous
+  characters like `0`/`O`/`1`/`I`) and shows it to the user **exactly
+  once**, on a dedicated "save this now" screen
+  (`templates/recovery_codes.html`) with a per-code Copy button. Only a
+  salted hash of the code is ever stored (`authutil.HashPassword`, the
+  same function used for the login password itself), so if the JSON data
+  file ever leaks, the recovery codes inside it are no more exposed than
+  the passwords are.
+- `/forgot-password` asks for the username, that recovery code, and a new
+  password (with confirmation, minimum 8 characters). On success, the
+  password is updated **and** the recovery code is rotated — the old code
+  stops working immediately, and a new one-time code is shown, so a
+  single leaked/observed code can't be replayed later.
+- The failure message is intentionally the same generic sentence whether
+  the username doesn't exist or the code was wrong, so a failed attempt
+  can't be used to enumerate valid usernames.
+- If both people lose their code (e.g. neither saved it), the only
+  recovery path in this MVP is direct access to `data/studylog.json` on
+  the machine running the server — acceptable for a private, self-hosted,
+  two-person tool, and called out explicitly on the login page's
+  "forgot password" link rather than left as a dead end.
+
 ## 19. Data Persistence
 
 See Decision D1 for *why* JSON-file storage was used instead of SQLite.
@@ -547,6 +579,37 @@ architecture leaves room for:
   "delete", not "edit", for the MVP).
 
 ---
+
+## Known Issues Fixed After Launch
+
+**"+ New goal" did nothing on a brand-new account (fixed).**
+Go's `encoding/json` marshals a nil slice (`var out []T` that was never
+appended to) as JSON `null`, not `[]`. `store.GoalsInGroup` (and the
+other `*InGroup`/`ChildGoals` list methods) used exactly that pattern, so
+`GET /api/goals` returned `null` for a brand-new group with zero goals —
+i.e. precisely the moment a user first tries to create their *first*
+goal. `goals.js` did `allGoals = await res.json()` and then immediately
+called `.filter(...)` on it; calling an array method on `null` throws,
+which silently aborted `openForCreate()` **before** `dialog.showModal()`
+ever ran — so clicking "+ New goal" appeared to do nothing at all, with
+no visible error.
+
+Fix, in two layers:
+1. **Root cause**: every store method that returns a list now
+   initializes `out := []T{}` instead of `var out []T`, so an empty
+   result always serializes as JSON `[]`. This is the correct general
+   rule for this codebase — any new list-returning store method should
+   follow the same pattern — and it's why `internal/handlers` never had
+   to special-case "empty" responses.
+2. **Defense in depth**: `loadGoals()` in both `static/js/app.js` and
+   `static/js/goals.js` now does `allGoals = (await res.json()) || []`,
+   so even an unexpected `null` from some future endpoint degrades to
+   "no goals" instead of a thrown exception.
+
+This was caught by writing a small Node/jsdom harness that loads the
+real server-rendered `/goals` page, executes the real `goals.js`, and
+simulates the click → fill form → save sequence exactly as a browser
+would — reproducing the silent failure outside of manual browser testing.
 
 ## Decisions Log
 

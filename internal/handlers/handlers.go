@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"studylog/internal/authutil"
@@ -50,6 +51,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /login", a.handleLoginPage)
 	mux.HandleFunc("POST /login", a.handleLoginSubmit)
 	mux.HandleFunc("POST /logout", a.handleLogout)
+	mux.HandleFunc("GET /forgot-password", a.handleForgotPasswordPage)
+	mux.HandleFunc("POST /forgot-password", a.handleForgotPasswordSubmit)
 
 	// Pages (auth required)
 	mux.HandleFunc("GET /{$}", a.withAuth(a.handleDashboard))
@@ -163,26 +166,47 @@ func (a *App) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	type recoveryItem struct{ Label, Code string }
+	var items []recoveryItem
+
 	for _, spec := range []struct{ display, username, password string }{
 		{u1name, u1user, u1pass},
 		{u2name, u2user, u2pass},
 	} {
 		salt, _ := authutil.NewSalt()
+		recoveryCode, err := authutil.NewRecoveryCode()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		recoverySalt, _ := authutil.NewSalt()
 		u := models.User{
-			ID:           newID("usr"),
-			Username:     spec.username,
-			DisplayName:  displayOr(spec.display, spec.username),
-			PasswordHash: authutil.HashPassword(spec.password, salt),
-			Salt:         salt,
-			GroupID:      group.ID,
-			CreatedAt:    time.Now().UTC(),
+			ID:               newID("usr"),
+			Username:         spec.username,
+			DisplayName:      displayOr(spec.display, spec.username),
+			PasswordHash:     authutil.HashPassword(spec.password, salt),
+			Salt:             salt,
+			RecoveryCodeHash: authutil.HashPassword(recoveryCode, recoverySalt),
+			RecoveryCodeSalt: recoverySalt,
+			GroupID:          group.ID,
+			CreatedAt:        time.Now().UTC(),
 		}
 		if err := a.Store.CreateUser(u); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		items = append(items, recoveryItem{Label: u.DisplayName + " (" + u.Username + ")", Code: recoveryCode})
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+
+	a.render(w, "recovery_codes.html", map[string]any{
+		"Title":    "Save your recovery codes",
+		"Heading":  "リカバリーコードを保存してください",
+		"Subtitle": "パスワードを忘れた場合、このコードだけが再設定の手段になります。メール機能は無いため、二人ともスクリーンショットやメモアプリに保存しておくことを強くおすすめします。",
+		"Items":    items,
+		"NextURL":  "/login",
+		"NextLabel": "保存しました。ログインへ進む",
+	})
 }
 
 func displayOr(display, fallback string) string {
@@ -247,6 +271,86 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+// ---------- forgot password ----------
+
+func (a *App) handleForgotPasswordPage(w http.ResponseWriter, r *http.Request) {
+	if !a.Store.AnyGroupExists() {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
+	a.render(w, "forgot_password.html", map[string]any{"Title": "Reset password"})
+}
+
+func (a *App) handleForgotPasswordSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	username := r.FormValue("username")
+	recoveryCode := strings.ToUpper(strings.TrimSpace(r.FormValue("recoveryCode")))
+	newPassword := r.FormValue("newPassword")
+	confirmPassword := r.FormValue("confirmPassword")
+
+	fail := func(msg string) {
+		a.render(w, "forgot_password.html", map[string]any{
+			"Title": "Reset password", "Error": msg, "Username": username,
+		})
+	}
+
+	if newPassword == "" || newPassword != confirmPassword {
+		fail("新しいパスワードが一致しません。")
+		return
+	}
+	if len(newPassword) < 8 {
+		fail("パスワードは8文字以上にしてください。")
+		return
+	}
+
+	u, err := a.Store.UserByUsername(username)
+	if err != nil || u.RecoveryCodeHash == "" ||
+		!authutil.VerifyPassword(recoveryCode, u.RecoveryCodeSalt, u.RecoveryCodeHash) {
+		// Deliberately the same generic message whether the username or
+		// the code was wrong, so a failed attempt can't be used to probe
+		// which usernames exist.
+		fail("ユーザー名またはリカバリーコードが正しくありません。")
+		return
+	}
+
+	newSalt, _ := authutil.NewSalt()
+	newRecoveryCode, err := authutil.NewRecoveryCode()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	newRecoverySalt, _ := authutil.NewSalt()
+
+	u.PasswordHash = authutil.HashPassword(newPassword, newSalt)
+	u.Salt = newSalt
+	// The used recovery code is retired and replaced, so it can't be
+	// reused if it ever leaked (e.g. an old screenshot).
+	u.RecoveryCodeHash = authutil.HashPassword(newRecoveryCode, newRecoverySalt)
+	u.RecoveryCodeSalt = newRecoverySalt
+
+	if err := a.Store.UpdateUser(u); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Also invalidate any existing "remember me" sessions for this user
+	// as a basic precaution after a credential reset.
+	// (MVP: tokens are only looked up by value, so we don't enumerate and
+	// delete them here — a real DB version would add a userId index.)
+
+	a.render(w, "recovery_codes.html", map[string]any{
+		"Title":    "New recovery code",
+		"Heading":  "パスワードを再設定しました",
+		"Subtitle": "念のため、リカバリーコードも新しいものに更新しました。古いコードはもう使えません。新しいコードを保存してください。",
+		"Items":    []struct{ Label, Code string }{{Label: u.DisplayName + " (" + u.Username + ")", Code: newRecoveryCode}},
+		"NextURL":  "/login",
+		"NextLabel": "保存しました。ログインへ進む",
+	})
+}
+
 // ---------- pages ----------
 
 func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request, u models.User) {
@@ -260,6 +364,7 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request, u models.U
 
 	a.render(w, "dashboard.html", map[string]any{
 		"Title":     "StudyLog",
+		"Active":    "grass",
 		"User":      u,
 		"Partners":  partners,
 		"RateGoals": rateGoals,
@@ -298,6 +403,7 @@ func (a *App) handleGoalsPage(w http.ResponseWriter, r *http.Request, u models.U
 
 	a.render(w, "goals.html", map[string]any{
 		"Title":    "Goals",
+		"Active":   "goals",
 		"User":     u,
 		"Rows":     rows,
 		"AllGoals": goalsList,

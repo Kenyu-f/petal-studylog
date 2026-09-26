@@ -124,10 +124,24 @@ func (s *Store) UserByID(id string) (models.User, error) {
 	return models.User{}, ErrNotFound
 }
 
+// UpdateUser overwrites a user record by ID — used by the password-reset
+// flow (new password hash + new recovery code hash).
+func (s *Store) UpdateUser(u models.User) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, existing := range s.d.Users {
+		if existing.ID == u.ID {
+			s.d.Users[i] = u
+			return s.saveLocked()
+		}
+	}
+	return ErrNotFound
+}
+
 func (s *Store) UsersInGroup(groupID string) []models.User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []models.User
+	out := []models.User{}
 	for _, u := range s.d.Users {
 		if u.GroupID == groupID {
 			out = append(out, u)
@@ -221,7 +235,7 @@ func (s *Store) GoalByID(id string) (models.Goal, error) {
 func (s *Store) GoalsInGroup(groupID string) []models.Goal {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []models.Goal
+	out := []models.Goal{}
 	for _, g := range s.d.Goals {
 		if g.GroupID == groupID {
 			out = append(out, g)
@@ -233,7 +247,7 @@ func (s *Store) GoalsInGroup(groupID string) []models.Goal {
 func (s *Store) ChildGoals(parentID string) []models.Goal {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []models.Goal
+	out := []models.Goal{}
 	for _, g := range s.d.Goals {
 		if g.ParentGoalID == parentID {
 			out = append(out, g)
@@ -302,7 +316,7 @@ func (s *Store) SessionByID(id string) (models.StudySession, error) {
 func (s *Store) SessionsInGroup(groupID string) []models.StudySession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []models.StudySession
+	out := []models.StudySession{}
 	for _, sess := range s.d.Sessions {
 		if sess.GroupID == groupID {
 			out = append(out, sess)
@@ -314,7 +328,7 @@ func (s *Store) SessionsInGroup(groupID string) []models.StudySession {
 func (s *Store) SessionsForDate(groupID, date string) []models.StudySession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []models.StudySession
+	out := []models.StudySession{}
 	for _, sess := range s.d.Sessions {
 		if sess.GroupID == groupID && sess.Date == date {
 			out = append(out, sess)

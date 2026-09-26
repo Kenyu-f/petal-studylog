@@ -12,12 +12,19 @@
 
   <main class="page">
     <section class="goals-header">
-      <h1 class="page-title">Goals</h1>
+      <div>
+        <h1 class="page-title">Goals</h1>
+        <p class="page-subtitle">long-term, held loosely; today, held closely.</p>
+      </div>
       <button id="new-goal-button" class="primary-button">+ New goal</button>
     </section>
 
     {{if not .Rows}}
-    <p class="muted">まだ Goal がありません。「+ New goal」から最初の目標を作成してください。</p>
+    <section class="empty-state">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c0-5 3-8 8-9-1 6-3 9-8 9Z"/><path d="M12 21c0-6-3.5-10-9-11 1 7 4 11 9 11Z"/><path d="M12 21v-6"/></svg>
+      <p>まだ Goal がありません。</p>
+      <p class="muted">「+ New goal」から最初の目標を作成してください。</p>
+    </section>
     {{end}}
 
     <ul class="goal-tree">
@@ -28,7 +35,7 @@
           <div class="goal-row-text">
             <span class="goal-title">{{.Node.Goal.Title}}</span>
             <span class="goal-meta">
-              <span class="tag">{{.Node.Goal.Type}}</span>
+              <span class="tag tag-type-{{.Node.Goal.Type}}">{{.Node.Goal.Type}}</span>
               <span class="tag tag-owner">{{.OwnerTag}}</span>
               {{if gt .Node.Goal.TargetValue 0.0}}<span class="muted">{{.Node.Goal.TargetValue}} {{.Node.Goal.TargetUnit}}{{if eq .Node.Goal.TargetPeriod "day"}}/day{{else if eq .Node.Goal.TargetPeriod "week"}}/week{{else}} total{{end}}</span>{{end}}
             </span>

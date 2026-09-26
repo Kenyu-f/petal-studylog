@@ -73,7 +73,7 @@
 
   async function loadGoals() {
     const res = await fetch("/api/goals");
-    allGoals = await res.json();
+    allGoals = (await res.json()) || [];
   }
 
   async function loadGrass() {
@@ -87,6 +87,36 @@
     }
     const payload = await res.json();
     renderGrass(payload.goal, payload.cells);
+    updateStreakBadge(payload.cells);
+  }
+
+  const streakBadge = document.getElementById("streak-badge");
+  const streakBadgeText = document.getElementById("streak-badge-text");
+
+  function updateStreakBadge(cells) {
+    if (!streakBadge) return;
+    const today = fmtDate(new Date());
+    const byDate = {};
+    cells.forEach((c) => (byDate[c.date] = c));
+    if (!(today in byDate)) {
+      streakBadge.hidden = true; // viewing a year without "today" in range
+      return;
+    }
+    let streak = 0;
+    let cursor = new Date();
+    while (true) {
+      const key = fmtDate(cursor);
+      const c = byDate[key];
+      if (!c || c.actualMin <= 0) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    if (streak === 0) {
+      streakBadge.hidden = true;
+      return;
+    }
+    streakBadgeText.textContent = `${streak} day streak`;
+    streakBadge.hidden = false;
   }
 
   function renderGrass(goal, cells) {

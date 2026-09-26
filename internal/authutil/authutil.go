@@ -55,3 +55,27 @@ func NewSessionToken() (string, error) {
 }
 
 var ErrInvalidCredentials = errors.New("invalid username or password")
+
+// recoveryAlphabet excludes visually ambiguous characters (0/O, 1/I/L)
+// since a person will be copying this down by hand as a backup.
+const recoveryAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+// NewRecoveryCode returns a human-copyable code like "XKQP-7GH2-MNB4",
+// used for the no-email "forgot password" flow. It is hashed with
+// HashPassword/VerifyPassword exactly like a password before storage —
+// the plaintext is never persisted, only shown once to the user.
+func NewRecoveryCode() (string, error) {
+	const groups, groupLen = 3, 4
+	raw := make([]byte, groups*groupLen)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	var b []byte
+	for i, v := range raw {
+		if i > 0 && i%groupLen == 0 {
+			b = append(b, '-')
+		}
+		b = append(b, recoveryAlphabet[int(v)%len(recoveryAlphabet)])
+	}
+	return string(b), nil
+}

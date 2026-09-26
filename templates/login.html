@@ -9,8 +9,11 @@
 </head>
 <body class="auth-body">
   <main class="auth-card">
+    <div class="auth-badge">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c0-5 3-8 8-9-1 6-3 9-8 9Z"/><path d="M12 21c0-6-3.5-10-9-11 1 7 4 11 9 11Z"/><path d="M12 21v-6"/></svg>
+    </div>
     <h1 class="auth-title">StudyLog</h1>
-    <p class="auth-subtitle">Log in</p>
+    <p class="auth-subtitle">おかえりなさい。ログインして続けましょう。</p>
     {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
     <form method="post" action="/login" class="stack-form">
       <label>Username
@@ -21,6 +24,7 @@
       </label>
       <button type="submit" class="primary-button">Log in</button>
     </form>
+    <p class="auth-footnote"><a href="/forgot-password">パスワードを忘れた場合</a></p>
   </main>
 </body>
 </html>

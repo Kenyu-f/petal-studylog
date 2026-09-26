@@ -25,7 +25,7 @@
 
   async function loadGoals() {
     const res = await fetch("/api/goals");
-    allGoals = await res.json();
+    allGoals = (await res.json()) || [];
   }
 
   function populateParentSelect(excludeId) {

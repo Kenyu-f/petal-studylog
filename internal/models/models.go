@@ -11,13 +11,19 @@ import "time"
 // User is one of the (at most a handful of) people using the app.
 // MVP auth is username + password, see internal/authutil.
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	DisplayName  string    `json:"displayName"`
-	PasswordHash string    `json:"passwordHash"`
-	Salt         string    `json:"salt"`
-	GroupID      string    `json:"groupId"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"displayName"`
+	PasswordHash string `json:"passwordHash"`
+	Salt         string `json:"salt"`
+	// RecoveryCodeHash/Salt back the no-email "forgot password" flow
+	// (see explanation.md "Password Recovery"). Only the hash is ever
+	// stored; the plaintext code is shown to the user exactly once, at
+	// setup time or right after a successful reset.
+	RecoveryCodeHash string    `json:"recoveryCodeHash"`
+	RecoveryCodeSalt string    `json:"recoveryCodeSalt"`
+	GroupID          string    `json:"groupId"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 // Group is a "Study Group" shared by two (or more) users. All Goals and
