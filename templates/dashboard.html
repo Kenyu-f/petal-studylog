@@ -1,0 +1,85 @@
+{{define "dashboard.html"}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  {{template "nav" .}}
+
+  <main class="page">
+    {{if not .RateGoals}}
+    <section class="empty-state">
+      <p>Grass に表示できる目標がまだありません。</p>
+      <p class="muted">まず <a href="/goals">Goals</a> で「1日あたりの目標時間」を持つ Goal を作成してください（例: Mathematics — 60 min/day）。</p>
+    </section>
+    {{else}}
+    <section class="grass-header">
+      <div class="goal-select-wrap">
+        <label for="goal-select" class="muted small-label">Goal</label>
+        <select id="goal-select">
+          {{range .RateGoals}}<option value="{{.ID}}" data-target="{{.TargetValue}}" data-unit="{{.TargetUnit}}">{{.Title}}</option>{{end}}
+        </select>
+      </div>
+      <div class="year-select-wrap">
+        <label for="year-select" class="muted small-label">Year</label>
+        <select id="year-select"></select>
+      </div>
+    </section>
+
+    <section id="grass-container" class="grass-container" aria-live="polite">
+      <p class="muted">Loading…</p>
+    </section>
+
+    <section class="today-summary">
+      <h2 class="section-title">Today · {{.Today}}</h2>
+      <div id="today-summary-list" class="today-list">
+        <p class="muted">Loading…</p>
+      </div>
+    </section>
+    {{end}}
+  </main>
+
+  <dialog id="day-dialog" class="day-dialog">
+    <form method="dialog" class="day-dialog-form">
+      <header class="day-dialog-header">
+        <h2 id="day-dialog-date">Date</h2>
+        <button type="submit" class="icon-button" aria-label="Close">×</button>
+      </header>
+
+      <div id="day-existing-sessions" class="existing-sessions"></div>
+
+      <div class="add-session-form">
+        <h3 class="add-session-title">Add a session</h3>
+        <div class="form-row">
+          <label>Goal
+            <select id="session-goal"></select>
+          </label>
+          <label>Subject
+            <input type="text" id="session-subject" placeholder="例: Calculus">
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Duration (min)
+            <input type="number" id="session-duration" min="0" step="1" placeholder="60">
+          </label>
+        </div>
+        <label class="full-width">Description <span class="muted">(optional)</span>
+          <textarea id="session-description" rows="3" placeholder="今日勉強した内容を自由に書いてください"></textarea>
+        </label>
+        <p id="session-form-error" class="form-error" hidden></p>
+        <button type="button" id="session-save" class="primary-button">Save session</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    window.STUDYLOG_USER_ID = {{.User.ID}};
+  </script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,116 @@
+{{define "goals.html"}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  {{template "nav" .}}
+
+  <main class="page">
+    <section class="goals-header">
+      <h1 class="page-title">Goals</h1>
+      <button id="new-goal-button" class="primary-button">+ New goal</button>
+    </section>
+
+    {{if not .Rows}}
+    <p class="muted">まだ Goal がありません。「+ New goal」から最初の目標を作成してください。</p>
+    {{end}}
+
+    <ul class="goal-tree">
+      {{range .Rows}}
+      <li class="goal-row" style="--depth: {{.Node.Depth}}" data-goal-id="{{.Node.Goal.ID}}">
+        <div class="goal-row-main">
+          <span class="goal-indent"></span>
+          <div class="goal-row-text">
+            <span class="goal-title">{{.Node.Goal.Title}}</span>
+            <span class="goal-meta">
+              <span class="tag">{{.Node.Goal.Type}}</span>
+              <span class="tag tag-owner">{{.OwnerTag}}</span>
+              {{if gt .Node.Goal.TargetValue 0.0}}<span class="muted">{{.Node.Goal.TargetValue}} {{.Node.Goal.TargetUnit}}{{if eq .Node.Goal.TargetPeriod "day"}}/day{{else if eq .Node.Goal.TargetPeriod "week"}}/week{{else}} total{{end}}</span>{{end}}
+            </span>
+            {{if .Node.Goal.Description}}<p class="goal-description">{{.Node.Goal.Description}}</p>{{end}}
+          </div>
+          <button class="link-button edit-goal-button" data-goal-id="{{.Node.Goal.ID}}">Edit</button>
+        </div>
+        {{if .Progress.HasPercent}}
+        <div class="progress-bar-wrap">
+          <div class="progress-bar"><div class="progress-bar-fill" style="width: {{pct (div .Progress.ActualMin .Progress.TargetMin)}}%"></div></div>
+          <span class="progress-label muted">{{.Progress.ActualMin}} / {{.Progress.TargetMin}} {{.Node.Goal.TargetUnit}}</span>
+        </div>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+  </main>
+
+  <dialog id="goal-dialog" class="goal-dialog">
+    <form method="dialog" class="goal-dialog-form">
+      <header class="day-dialog-header">
+        <h2 id="goal-dialog-title">New goal</h2>
+        <button type="submit" class="icon-button" aria-label="Close">×</button>
+      </header>
+
+      <input type="hidden" id="goal-id">
+
+      <label>Title
+        <input type="text" id="goal-title" required>
+      </label>
+      <label>Description <span class="muted">(optional)</span>
+        <textarea id="goal-description" rows="2"></textarea>
+      </label>
+      <label>Parent goal
+        <select id="goal-parent"><option value="">— (top level)</option></select>
+      </label>
+      <div class="form-row">
+        <label>Type
+          <select id="goal-type">
+            <option value="long-term">long-term</option>
+            <option value="medium-term">medium-term</option>
+            <option value="short-term" selected>short-term</option>
+          </select>
+        </label>
+        <label>Owner
+          <select id="goal-shared">
+            <option value="false">Just me</option>
+            <option value="true">Shared</option>
+          </select>
+        </label>
+      </div>
+
+      <label>Progress type
+        <select id="goal-progress-mode">
+          <option value="none">No numeric progress (e.g. abstract goals)</option>
+          <option value="rate">Daily target → shows on Grass (e.g. 60 min/day)</option>
+          <option value="cumulative">Cumulative total → shows a progress bar (e.g. 3000 min total)</option>
+        </select>
+      </label>
+
+      <div id="goal-target-fields" class="form-row" hidden>
+        <label>Target value (minutes)
+          <input type="number" id="goal-target-value" min="0" step="1">
+        </label>
+        <label id="goal-target-period-wrap">Period
+          <select id="goal-target-period">
+            <option value="day">per day</option>
+            <option value="week">per week</option>
+            <option value="total">total (lifetime)</option>
+          </select>
+        </label>
+      </div>
+
+      <p id="goal-form-error" class="form-error" hidden></p>
+      <div class="goal-dialog-actions">
+        <button type="button" id="goal-delete-button" class="link-button danger" hidden>Delete goal</button>
+        <button type="button" id="goal-save-button" class="primary-button">Save goal</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/goals.js"></script>
+</body>
+</html>
+{{end}}

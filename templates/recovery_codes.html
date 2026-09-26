@@ -1,0 +1,49 @@
+{{define "recovery_codes.html"}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · StudyLog</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-body">
+  <main class="auth-card auth-card-wide">
+    <div class="auth-badge">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+    </div>
+    <h1 class="auth-title">{{.Heading}}</h1>
+    <p class="auth-subtitle">{{.Subtitle}}</p>
+
+    <p class="recovery-warning">このコードは今しか表示されません。パスワードと同じくらい大切に保管してください（メール機能は無いため、これが唯一の再設定手段です）。</p>
+
+    <div class="recovery-list">
+      {{range .Items}}
+      <div class="recovery-card">
+        <div>
+          <div class="recovery-card-label">{{.Label}}</div>
+          <div class="recovery-card-code" data-code="{{.Code}}">{{.Code}}</div>
+        </div>
+        <button type="button" class="recovery-copy-button" data-copy-target>Copy</button>
+      </div>
+      {{end}}
+    </div>
+
+    <a href="{{.NextURL}}" class="primary-button" style="display:block; text-align:center; text-decoration:none; margin-top: 6px;">{{.NextLabel}}</a>
+  </main>
+
+  <script>
+    document.querySelectorAll('[data-copy-target]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var code = btn.previousElementSibling.querySelector('[data-code]').dataset.code;
+        navigator.clipboard.writeText(code).then(function () {
+          var original = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = original; }, 1500);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
+{{end}}

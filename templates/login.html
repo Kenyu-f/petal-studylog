@@ -1,0 +1,27 @@
+{{define "login.html"}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · StudyLog</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-body">
+  <main class="auth-card">
+    <h1 class="auth-title">StudyLog</h1>
+    <p class="auth-subtitle">Log in</p>
+    {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+    <form method="post" action="/login" class="stack-form">
+      <label>Username
+        <input type="text" name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary-button">Log in</button>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}

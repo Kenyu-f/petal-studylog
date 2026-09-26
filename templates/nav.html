@@ -1,0 +1,15 @@
+{{define "nav"}}
+<header class="topbar">
+  <a class="brand" href="/">StudyLog</a>
+  <nav class="topnav">
+    <a href="/">Grass</a>
+    <a href="/goals">Goals</a>
+  </nav>
+  <div class="topbar-right">
+    {{if .User}}<span class="whoami">{{.User.DisplayName}}</span>
+    <form action="/logout" method="post" class="inline-form">
+      <button class="link-button" type="submit">Log out</button>
+    </form>{{end}}
+  </div>
+</header>
+{{end}}

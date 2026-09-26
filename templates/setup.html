@@ -1,0 +1,51 @@
+{{define "setup.html"}}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · StudyLog</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-body">
+  <main class="auth-card auth-card-wide">
+    <h1 class="auth-title">StudyLog をはじめる</h1>
+    <p class="auth-subtitle">最初に、二人のグループを作成します。この画面が出るのは最初の一回だけです。</p>
+    {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+    <form method="post" action="/setup" class="stack-form">
+      <label>Group name
+        <input type="text" name="groupName" placeholder="例: Ken & Hasti" required>
+      </label>
+
+      <fieldset class="person-fieldset">
+        <legend>Person 1</legend>
+        <label>Display name
+          <input type="text" name="user1DisplayName" placeholder="例: Ken">
+        </label>
+        <label>Username
+          <input type="text" name="user1Username" required>
+        </label>
+        <label>Password
+          <input type="password" name="user1Password" required>
+        </label>
+      </fieldset>
+
+      <fieldset class="person-fieldset">
+        <legend>Person 2</legend>
+        <label>Display name
+          <input type="text" name="user2DisplayName" placeholder="例: Hasti">
+        </label>
+        <label>Username
+          <input type="text" name="user2Username" required>
+        </label>
+        <label>Password
+          <input type="password" name="user2Password" required>
+        </label>
+      </fieldset>
+
+      <button type="submit" class="primary-button">Create group</button>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}
