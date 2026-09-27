@@ -48,6 +48,19 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute is only reliably "hidden" if nothing else sets
+   `display` on the same element with higher precedence. Several
+   components here (.form-row, .streak-badge, …) set `display: grid` /
+   `inline-flex`, which — per the CSS cascade — beats the browser's own
+   `[hidden] { display: none }` rule outright (author origin always wins
+   over user-agent origin for normal-priority declarations, regardless
+   of specificity). Without this rule, an element can carry the `hidden`
+   attribute (and JS can correctly report `el.hidden === true`) while
+   still rendering fully visible and interactive — which is exactly what
+   happened to #goal-target-fields (see explanation.md, Known Issues).
+   This single reset rule makes `hidden` behave as expected everywhere. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   background: var(--bg);
@@ -354,6 +367,12 @@ input:focus, select:focus, textarea:focus {
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+/* Each label sits in a 12px-wide grid track (same width as a day cell)
+   but text like "Jan" needs more room than that. Rather than clip it,
+   let it overflow to the right without wrapping — safe now that the JS
+   only ever assigns a label to the one column containing a month's 1st,
+   so labels are always several empty columns apart and never collide. */
+.grass-months span { white-space: nowrap; overflow: visible; }
 .grass-body { display: flex; gap: 6px; }
 .grass-weekdays {
   display: grid;

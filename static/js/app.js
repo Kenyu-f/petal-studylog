@@ -135,8 +135,12 @@
 
     const weekCount = cellsForGrid.length / 7;
 
-    // Month labels: for each week-column, label it if that column contains
-    // the 1st of a month.
+    // Month labels: label a week-column if it contains the actual 1st of
+    // a month. (Using "date <= 7" instead of "date === 1" was the earlier
+    // bug — the 1st-7th of a month spans two week-columns whenever the
+    // month doesn't start on a Sunday, which duplicated the label onto
+    // both columns. "date === 1" happens in exactly one column per month,
+    // by definition, so it can never duplicate.)
     const monthLabels = [];
     for (let w = 0; w < weekCount; w++) {
       let label = "";
@@ -144,7 +148,7 @@
         const cell = cellsForGrid[w * 7 + r];
         if (cell) {
           const d = new Date(cell.date + "T00:00:00");
-          if (d.getDate() <= 7 && d.getDay() === r) {
+          if (d.getDate() === 1) {
             label = MONTH_LABELS[d.getMonth()];
           }
         }

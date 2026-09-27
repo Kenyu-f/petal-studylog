@@ -611,6 +611,59 @@ real server-rendered `/goals` page, executes the real `goals.js`, and
 simulates the click → fill form → save sequence exactly as a browser
 would — reproducing the silent failure outside of manual browser testing.
 
+**`hidden` attribute silently ignored on `.form-row` / `.streak-badge` (fixed).**
+`#goal-target-fields` (the Target value/Period inputs in the goal dialog)
+carries both `class="form-row"` and the HTML `hidden` attribute.
+`.form-row { display: grid; ... }` is an author-stylesheet declaration;
+the browser's own `[hidden] { display: none }` rule is a user-agent
+declaration. Per the CSS cascade, **author-origin "normal" declarations
+always win over user-agent-origin "normal" declarations, regardless of
+selector specificity.** So `.form-row`'s `display: grid` silently beat
+the browser's built-in `[hidden]` rule — the element's `hidden` DOM
+property correctly read `true` (so `goals.js`'s own logic, which checks
+`targetFields.hidden` before deciding what to submit, still behaved
+correctly), but the field remained **visually present and editable**
+regardless of the selected Progress type. A user could type a target
+value (e.g. "240" min/day) into a field that looked active even while
+"Progress type" was still set to `none`; on save, the JS correctly
+zeroed the target for a `none`-mode goal (matching what was selected in
+the dropdown), silently discarding the number the user had typed and
+could see. The same bug affected `#streak-badge` (`class="streak-badge"`
+sets `display: inline-flex`), which could remain visible even when
+`hidden`.
+
+Fix: a single reset rule at the top of `static/css/style.css`,
+`[hidden] { display: none !important; }`, restores the expected
+semantics everywhere in the app — any element with the `hidden`
+attribute is now guaranteed to actually be hidden, regardless of what
+other `display` value a class on it sets. This is a well-known general
+gotcha (searchable as "why doesn't the hidden attribute work"), and the
+fix is the standard one; it's included this early in the stylesheet
+specifically so future components don't reintroduce the same bug.
+
+**Grass month labels duplicated (e.g. "JanJanFebMarAprApr...") (fixed).**
+`static/js/app.js`'s month-label logic labeled a week-column whenever it
+contained a day with `date-of-month <= 7`. That's wrong: a month's 1st-7th
+only ever fits entirely inside one week-column when the 1st falls on a
+Sunday. For every other starting weekday, days 1-7 spill across **two**
+week-columns (e.g. if a month starts on a Monday, day 7 of that month is
+the following Sunday — the first day of the *next* column), so both
+columns matched the condition and both got labeled with the same month
+name, producing runs like "JanJan". Verified by generating the label
+sequence for 2020-2035 (see `explanation.md`'s development history) and
+confirming every month appeared exactly twice for most starting weekdays,
+matching the reported bug exactly.
+
+Fix: label a column only when it contains the literal 1st of a month
+(`d.getDate() === 1`) instead of "any day <= 7". Since a month has
+exactly one 1st, and week-columns partition the calendar without overlap,
+this can never duplicate, by construction — no need to reason about
+weekdays at all. Also added `white-space: nowrap` to the label spans:
+they intentionally overflow their narrow 12px grid track (a 3-letter
+month name doesn't fit in a day-cell-width column), which is fine now
+that labels are always several empty columns apart and have room to
+spill without colliding.
+
 ## Decisions Log
 
 This section records places where implementation revealed a genuine
@@ -649,3 +702,424 @@ matching the spec's explicit wording; the goal-progress bar (section 11),
 by contrast, *does* aggregate descendants, because there the spec
 explicitly asks for that, and progress is a single already-normalized
 percentage rather than a mix of raw units.
+
+---
+
+## Appendix: How to Read This Codebase, and What Go to Study For It
+
+This section is a companion to sections 2-4 (Architecture, Tech Stack,
+Directory Structure) written for someone who wants to actually *read and
+understand* the Go code, not just run it. It maps each package to the Go
+language/stdlib concepts it uses, in the order you'll hit increasing
+difficulty, plus what to study for each.
+
+### The shape of the codebase, restated simply
+
+Think of the four `internal/` packages as four layers, each only
+depending on the ones "below" it:
+
+```
+internal/handlers   (HTTP: reads requests, writes responses)
+        depends on
+internal/grass       (pure calculation: no I/O at all)
+        and
+internal/store        (persistence: reads/writes the JSON file)
+        depends on
+internal/models        (plain data shapes, no logic)
+        and
+internal/authutil       (password/token helpers, no I/O)
+```
+
+Nothing in `models`, `authutil`, or `grass` ever imports `store` or
+`handlers` — data flows one direction. That's not a Go-specific rule, but
+it's *expressed* in Go simply by which package imports which; there's no
+special "layer" keyword. This is the first thing worth understanding: Go
+projects don't have a required project layout, `internal/` is just a
+stdlib-enforced convention (anything under a directory named `internal`
+can only be imported by code inside the same module — see "Go modules
+and `internal/`" below), and everything else here is our own convention,
+not the language's.
+
+### A suggested reading order (easiest file → hardest)
+
+1. **`internal/models/models.go`** — just struct definitions and one
+   `const` block. If you can read this file, you already know enough Go
+   syntax to start.
+2. **`internal/authutil/authutil.go`** — small standalone functions, no
+   structs with methods yet. Good second read.
+3. **`internal/grass/grass.go`** — introduces methods-as-functions
+   (no `store` dependency, still pure), maps, recursion, closures.
+4. **`internal/store/store.go`** — introduces methods *with receivers*
+   (`func (s *Store) CreateGoal(...)`), mutexes, and file I/O.
+5. **`main.go`** — short, but ties every package together; read this
+   *after* the above so the pieces it wires up aren't a mystery.
+6. **`internal/handlers/handlers.go`** — the longest and densest file;
+   save it for last. It uses everything from the files above, plus HTTP
+   and templating concepts of its own.
+
+### What to study, mapped to what you'll see
+
+**1. Core syntax — needed before any of the files above make sense.**
+If you're new to Go, do this first, in order:
+- [A Tour of Go](https://go.dev/tour/) (interactive, ~2-3 hours) —
+  covers variables, functions, structs, slices, maps, methods,
+  interfaces, and goroutines. You genuinely need all of it except
+  goroutines/channels for this codebase (this app doesn't use
+  goroutines directly — `net/http` runs each request on its own
+  goroutine for you, invisibly, which is worth knowing but not
+  something you have to write yourself here).
+- [Effective Go](https://go.dev/doc/effective_go) — denser, but explains
+  the *idioms* (why errors are returned instead of thrown, why `nil` is
+  meaningful, how naming conventions work) that make idiomatic Go code
+  look different from Java/Python/JS at a glance.
+
+**2. Structs, methods, and pointer receivers** (`models.go`, `store.go`,
+`grass.go`, `authutil.go` all use these):
+- A `struct` is a plain data record (`type Goal struct { ... }`).
+- A `func (s *Store) CreateGoal(...)` is a *method* — a function attached
+  to a type, here `*Store` (a pointer receiver, meaning the method can
+  mutate the actual `Store`, not a copy of it). Study: "methods" and
+  "pointer receivers vs value receivers" in the Tour. The rule of thumb
+  you'll see followed throughout this codebase: use a pointer receiver
+  whenever the method needs to mutate the receiver or the struct is
+  large; `Store` is always `*Store` for exactly that reason (every
+  method needs to touch the same in-memory data + mutex).
+
+**3. JSON struct tags** (`models.go`, and every JSON request/response in
+`handlers.go`):
+```go
+type User struct {
+    ID       string `json:"id"`
+    Username string `json:"username"`
+}
+```
+The text in backticks after each field is a *struct tag* — metadata read
+by `encoding/json` (via reflection) to decide the JSON key name. Study:
+the [`encoding/json` package docs](https://pkg.go.dev/encoding/json),
+specifically `Marshal` and `Unmarshal`. Two gotchas this codebase runs
+into directly (documented in the Known Issues section above): a field
+must start with an uppercase letter to be visible to `encoding/json` at
+all (Go's "exported" rule — see below), and an uninitialized slice
+(`var out []T`) marshals to JSON `null`, not `[]`.
+
+**4. Exported vs unexported identifiers** (every file): Go has no
+`public`/`private` keywords. Instead, any name starting with an
+**uppercase** letter is exported (visible outside its package); lowercase
+is package-private. This is why `models.Goal`'s fields are all
+capitalized (`Title`, `TargetValue`, ...) — they need to be visible to
+`store`, `handlers`, and `encoding/json`. `internal/store`'s helper
+function `newID` (in `handlers.go`, lowercase) is only ever called from
+within that same package.
+
+**5. Interfaces and error handling** (`store.go`, `handlers.go`):
+- `error` is just a built-in interface (`type error interface { Error()
+  string }`). Functions that can fail return `(result, error)` and
+  callers check `if err != nil`. Study: "Errors" in the Tour, then
+  the [`errors` package docs](https://pkg.go.dev/errors) for
+  `errors.New` and `errors.Is` (used in `store.go`'s `ErrNotFound`
+  sentinel error and checked in `handlers.go`).
+- `http.ResponseWriter` and `http.Handler`/`http.HandlerFunc` (used
+  throughout `handlers.go`) are also just interfaces — study "Interfaces"
+  in the Tour, then look at the
+  [`net/http` package docs](https://pkg.go.dev/net/http) for those three
+  names specifically.
+
+**6. Slices and maps** (`grass.go`, `store.go`): Go's `[]T` (slice) and
+`map[K]V` are used constantly for collecting and aggregating data (e.g.
+`sessionsByGoal := map[string]float64{}` in `grass.go`'s
+`ComputeProgress`). Study "Slices" and "Maps" in the Tour — pay
+particular attention to the difference between a `nil` slice/map and an
+empty-but-initialized one (`var m map[K]V` is nil and read-only-safe but
+panics on write; `m := map[K]V{}` is safe to write to immediately). This
+directly matters here — see the "Known Issues Fixed" section above.
+
+**7. Closures and recursion** (`grass.go`'s `SortGoalsForTree` and
+`ComputeProgress`): both declare a function-local `var walk
+func(...)` and then assign a recursive closure to it (you can't write a
+recursive function literal directly in Go without this two-step
+declare-then-assign, since the closure needs to refer to its own name).
+Study "Function values" and "Closures" in the Tour.
+
+**8. `sync.Mutex` / `sync.RWMutex`** (`store.go`): every `Store` method
+takes a lock before touching the in-memory data, to make concurrent HTTP
+requests (remember: each request runs on its own goroutine) safe. Study
+the [`sync` package docs](https://pkg.go.dev/sync), specifically
+`Mutex` and `RWMutex`, and the general concept of a "data race" — Go's
+`-race` flag (`go run -race .`, `go test -race ./...`) is worth trying
+once you're comfortable, as a way to *verify* this kind of code is
+actually safe rather than trusting it by inspection.
+
+**9. `net/http` and the Go 1.22 routing patterns** (`handlers.go`):
+- The core loop: a `func(w http.ResponseWriter, r *http.Request)` reads
+  the request and writes the response.
+  [`net/http` docs](https://pkg.go.dev/net/http) are the reference; the
+  [Writing Web Applications](https://go.dev/doc/articles/wiki/) tutorial
+  is a gentler introduction covering the same package this app uses.
+- `mux.HandleFunc("PUT /api/goals/{id}", ...)` — the `METHOD /path/{param}`
+  pattern syntax is new as of **Go 1.22** (released Feb 2024); older Go
+  tutorials/StackOverflow answers won't show this and will instead reach
+  for a third-party router. Study the
+  [Go 1.22 release notes' `net/http` routing section](https://go.dev/doc/go1.22)
+  specifically, since most general Go material predates it.
+- Middleware-as-a-function-that-returns-a-function
+  (`func (a *App) withAuth(next func(...)) http.HandlerFunc { return
+  func(...) { ...; next(w, r, u) } }`) is a very common Go HTTP pattern
+  not unique to this codebase — once `net/http` itself makes sense, this
+  pattern (a function wrapping another function to add behavior before/
+  after calling it) will look like an obvious consequence of functions
+  being values in Go.
+
+**10. `html/template`** (`main.go`, `handlers.go`, every `.html` file):
+Go's server-side templating package, distinct from `text/template` in
+that it auto-escapes output for HTML safety (see section 17). Study the
+[`html/template` package docs](https://pkg.go.dev/html/template) — the
+`{{if}}`, `{{range}}`, `{{define}}/{{template}}` constructs used in
+`templates/*.html` are all documented there. Note in particular how
+`ParseGlob` in `main.go` combines every `templates/*.html` file into one
+shared template set (explaining why `nav.html`'s `{{define "nav"}}` block
+is callable from `dashboard.html` via `{{template "nav" .}}`).
+
+**11. Other small stdlib corners worth knowing** (skim as you hit them):
+- `crypto/rand`, `crypto/sha256`, `crypto/subtle`, `encoding/hex` —
+  `internal/authutil`; small enough to read the
+  [package docs](https://pkg.go.dev/crypto/rand) directly rather than a
+  tutorial.
+- `os.ReadFile`/`os.WriteFile`/`os.Rename` — `internal/store`'s
+  temp-file-then-rename write pattern; worth knowing *why* this pattern
+  exists (atomic replace on most filesystems) even though it's only a
+  few lines.
+- `flag` — `main.go`'s `-addr`/`-data` command-line flags; the
+  [package docs](https://pkg.go.dev/flag) are a five-minute read.
+
+### If you want a single next step
+
+Do [A Tour of Go](https://go.dev/tour/) end to end first (skip nothing;
+even the goroutines/channels sections build intuition for how
+`net/http` behaves under the hood, even though this app doesn't write
+`go func(){}()` anywhere itself). After that, you should be able to open
+`internal/models/models.go` through `internal/handlers/handlers.go`, in
+the order listed above, and read every line without stopping — at which
+point you'll understand this codebase better than this document can
+explain it in prose.
+
+---
+
+## Deploying StudyLog
+
+### Why not Vercel
+
+Vercel is built around serverless functions: each request runs in a
+short-lived, isolated container with a **read-only, ephemeral**
+filesystem — nothing written to disk survives past that one request, let
+alone between deploys. StudyLog's storage layer (Decision D1) is a single
+JSON file written to local disk (`data/studylog.json`) by a long-running
+process. On Vercel, every study session you logged would vanish the
+moment the serverless function instance that handled that request was
+recycled — which can be almost immediately. Vercel is excellent for
+Next.js/static/edge-function apps; it's simply the wrong shape of host
+for "one process, one persistent local file." StudyLog needs a host that
+runs a **long-lived container with a persistent disk volume attached**.
+
+### Picking a host (checked September 2026)
+
+"Coolness" is subjective, so here's what's actually true of each option
+at the time of writing, so you can decide:
+
+| Host | Persistent volume? | Approx. cost for an app this small | Feel |
+|---|---|---|---|
+| **Railway** | Yes, attach in the dashboard | Hobby plan: $5/month flat, includes $5 of usage — a tiny idle Go binary like this comfortably fits inside that | Push-to-deploy from GitHub, very polished dashboard, fastest to get a URL |
+| **Fly.io** | Yes (Fly Volumes, $0.15/GB/month) | No free tier for new accounts anymore (Oct 2024+); a `shared-cpu-1x-256mb` machine is ~$2/month + a small volume ≈ **$2-3/month** total | CLI-first (`flyctl`), deploys as a real VM close to users in a region you pick, more knobs to turn |
+| **Render** | Yes, on paid web services (persistent disks aren't on the free tier) | ~$7/month for the cheapest always-on web service with a disk | Simple, fixed pricing, less CLI-heavy than Fly |
+| **Self-hosted + [Coolify](https://coolify.io/)** | Yes — it's just a directory on your own VPS | Whatever your VPS costs (a small Hetzner/DigitalOcean box runs ~$4-6/month) + $0 for Coolify itself (open source) | Full control, no vendor lock-in, a genuinely nice-looking self-hosted dashboard — the option worth trying if "cooler than Vercel" means "I want to own the whole stack" rather than "another company's PaaS" |
+
+None of these are free forever for an always-on app in 2026 — that era
+of hosting mostly ended. For a two-person private tool, all four options
+land in the $2-7/month range. The guide below uses **Railway**, since it
+has the least setup for the result (a live HTTPS URL with a persistent
+volume, from a GitHub push); Fly.io steps are included afterward for
+anyone who prefers more control over region/infrastructure.
+
+Either way, the app itself needed one small change to be
+cloud-deployment-ready: `main.go` now listens on the platform-provided
+`$PORT` environment variable and reads the data file path from
+`$DATA_PATH`, falling back to `:8080` / `data/studylog.json` for local
+use — the explicit `-addr`/`-data` flags still take priority if you pass
+them, so nothing about running it locally (section 23) changed.
+
+### Deploying to Railway
+
+1. **Push this project to a GitHub repo** (a plain `git init` / `git add
+   .` / `git commit` / push to a new GitHub repo works — the
+   `.gitignore` already excludes `data/*.json` so your local test data
+   never gets committed).
+2. At [railway.com](https://railway.com), **New Project → Deploy from
+   GitHub repo**, and pick the repo. Railway detects the `Dockerfile` at
+   the project root automatically and builds from it (no Nixpacks
+   config needed, since the Dockerfile is explicit about exactly how to
+   build and run a dependency-free Go binary).
+3. Once the service exists, open it → **Settings → Networking → Generate
+   Domain**. This gives you a public `https://<something>.up.railway.app`
+   URL and also sets the `$PORT` environment variable Railway expects
+   your app to listen on — which `main.go` now reads automatically.
+4. **Attach a volume** so data survives redeploys: service → **Volumes →
+   New Volume**. Set the **mount path to `/data`**. That's it — no extra
+   environment variable is needed, because the `Dockerfile` already sets
+   `DATA_PATH=/data/studylog.json` by default, matching that mount path.
+5. Deploy (Railway does this automatically on every push to your default
+   branch once connected). Open the generated URL — you should land on
+   `/setup`, exactly like running it locally for the first time.
+6. Optional: **Settings → Networking → Custom Domain** to put it behind
+   your own domain instead of the `.up.railway.app` one.
+
+That's the whole deployment: one Dockerfile, one volume, one generated
+domain.
+
+### Deploying to Fly.io (alternative)
+
+1. Install `flyctl` ([instructions](https://fly.io/docs/hands-on/install-flyctl/)),
+   then `fly auth login`.
+2. From the project root: `fly launch` — it detects the `Dockerfile`,
+   asks for an app name and region, and generates a `fly.toml`. **Say no**
+   to "would you like to set up a Postgres database" (not needed).
+3. Create a volume in the same region you picked: `fly volumes create
+   studylog_data --size 1` (1GB — vastly more than this app will ever
+   need; a JSON file of years of daily study logs for two people is
+   still well under a megabyte).
+4. Edit the generated `fly.toml` to mount that volume and set
+   `DATA_PATH`:
+   ```toml
+   [mounts]
+     source = "studylog_data"
+     destination = "/data"
+
+   [env]
+     DATA_PATH = "/data/studylog.json"
+   ```
+5. `fly deploy`. Fly prints the app's public URL
+   (`https://<app-name>.fly.dev`) when it finishes.
+
+Fly.io requires a credit card even to start (no more free tier for new
+accounts as of late 2024), but at this app's tiny resource footprint
+(one always-on 256MB shared-CPU machine + a 1GB volume), the bill is
+roughly $2-3/month.
+
+### A note on backups either way
+
+Both platforms' volumes are reliable but not infinite — it's worth
+occasionally downloading `data/studylog.json` as a backup (Railway: use
+its shell/SSH feature to `cat` the file; Fly: `fly ssh console` then
+`cat /data/studylog.json`, or `fly sftp get`). Because the whole
+"database" is one small JSON file (see Decision D1), a backup is
+literally just copying that one file somewhere safe — no dump/restore
+tooling needed.
+
+### Deploying for genuinely $0/month: Oracle Cloud Always Free + Cloudflare Tunnel
+
+The Railway/Fly.io guides above are the least-setup options, but neither
+is free forever for an always-on app in 2026 (confirmed by checking each
+platform's current pricing). If the goal is **$0/month, indefinitely**,
+and you don't already have a machine at home that can stay on, the
+combination that actually achieves that today is:
+
+- **Compute + persistent disk**: an [Oracle Cloud "Always Free"](https://www.oracle.com/cloud/free/)
+  Ampere A1 (ARM) VM. Oracle still offers this as a genuinely permanent
+  free tier (reduced from 4 OCPU/24GB to 2 OCPU/12GB total as of June
+  2026, but this app needs a tiny fraction of even the smallest slice of
+  that). The VM's own disk is already a normal persistent disk — unlike
+  Railway/Fly, there's no separate "volume" concept to configure.
+- **Public HTTPS URL, without opening any firewall port**: [Cloudflare
+  Tunnel](https://developers.cloudflare.com/cloudflare-one/networking/tunnels/)
+  (`cloudflared`), which is free and unrelated to the paid Workers/
+  Containers products (see below). A "quick tunnel"
+  (`cloudflared tunnel --url http://localhost:8080`) needs no Cloudflare
+  account or domain — it hands you a random `https://<random>.
+  trycloudflare.com` URL. That URL only changes if the `cloudflared`
+  process itself restarts, so running it as a systemd service (below)
+  keeps it stable.
+
+This genuinely costs $0: Oracle's Always Free VM never expires as long
+as usage stays within the (still generous, relative to this app's needs)
+limits, and `cloudflared` quick tunnels have no usage-based billing.
+
+**Why not Cloudflare's own app-hosting products?** Worth being explicit
+about, since it's a natural question: Cloudflare **Workers** run
+JavaScript/Wasm in an isolate sandbox, not arbitrary Go binaries with a
+real `net/http` server and local file I/O — StudyLog would need a full
+rewrite (a different storage layer using D1/KV, and the HTTP layer
+rewritten around Workers' `fetch` event model) to run there at all.
+Cloudflare **Containers** *can* run this exact Docker image unmodified,
+but as of 2026 they require the Workers Paid plan ($5/month minimum) —
+so not actually free. Cloudflare **Tunnel**, used the way described
+here, is the piece of Cloudflare's product line that's both free and
+usable with the app completely unmodified — it's a network-layer proxy
+in front of a normal server, not a hosting runtime with its own
+constraints.
+
+Steps (Ubuntu ARM, matching an Oracle Always Free Ampere A1 instance):
+
+1. Create the Always Free VM (Oracle Cloud console → Compute → Create
+   Instance → Ubuntu image, `VM.Standard.A1.Flex` shape, Always Free
+   eligible). If a region reports "out of capacity," retry later or try
+   a different Availability Domain within your home region — this is a
+   commonly reported, temporary Oracle-side capacity issue, not a
+   configuration mistake on your end.
+2. `ssh` in, install Go: `sudo apt update && sudo apt install -y
+   golang-go git` (this pulls the ARM build automatically; since
+   StudyLog has zero external dependencies, there's nothing to
+   cross-compile or worry about CGO for).
+3. Get the code onto the VM (`git clone` if it's on GitHub, or `scp -r`
+   from your machine), then `go build -o studylog .`.
+4. Run it as a systemd service so it survives reboots and restarts on
+   crash:
+   ```ini
+   # /etc/systemd/system/studylog.service
+   [Unit]
+   Description=StudyLog
+   After=network.target
+
+   [Service]
+   User=ubuntu
+   WorkingDirectory=/home/ubuntu/studylog
+   ExecStart=/home/ubuntu/studylog/studylog -addr :8080 -data /home/ubuntu/studylog/data/studylog.json
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   `sudo systemctl enable --now studylog`
+5. Install `cloudflared` (`.deb` release from GitHub for `arm64`), no
+   Cloudflare account needed for a quick tunnel.
+6. Run the tunnel as a systemd service too, so the URL stays stable
+   across reboots:
+   ```ini
+   # /etc/systemd/system/cloudflared.service
+   [Unit]
+   Description=Cloudflare Tunnel
+   After=network.target
+
+   [Service]
+   ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   `sudo systemctl enable --now cloudflared`
+7. `sudo journalctl -u cloudflared -f` prints the assigned
+   `https://<random>.trycloudflare.com` URL — that's the public address.
+
+Notably, none of Oracle's inbound firewall (Security List / NSG)
+configuration is needed for this: `cloudflared` only makes *outbound*
+connections from the VM out to Cloudflare's network, so port 8080 never
+needs to be opened to the public internet at all — sidestepping a
+common source of VPS deployment friction.
+
+**Tradeoffs versus Railway/Fly.io**, stated plainly: more manual setup
+(you're managing a real Linux server, not clicking through a dashboard),
+a `trycloudflare.com` URL rather than a custom domain (a **named**
+Cloudflare Tunnel with a stable subdomain is possible instead, but
+requires owning a domain added to a Cloudflare account — the quick
+tunnel above needs neither), and you're responsible for OS updates on
+the VM yourself. In exchange, it's the one option here with no monthly
+bill at any point, for as long as Oracle continues offering the Always
+Free tier.

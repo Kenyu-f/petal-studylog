@@ -1,0 +1,5 @@
+data/*.json
+data/*.json.tmp
+studylog
+studylog_bin
+.git
